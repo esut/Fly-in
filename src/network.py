@@ -1,39 +1,40 @@
 from zone import Zone
 from connection import Connection
 
+
 class Network:
-    """Represents the graph of zones and their connections."""
+    """Holds all zones and connections that make up the map."""
 
     def __init__(self) -> None:
-        """Initialize an empty network."""
+        """Start with an empty network."""
         self.zones: dict[str, Zone] = {}
-        # القاموس السحري: يربط اسم المنطقة بقائمة الروابط الخاصة بها
-        self.adjacency_list: dict[str, list[Connection]] = {}
+        self.connections: list[Connection] = []
 
     def add_zone(self, zone: Zone) -> None:
-        """
-        Add a zone to the network.
-        """
+        """Add a zone to the network."""
         self.zones[zone.name] = zone
-        if zone.name not in self.adjacency_list:
-            self.adjacency_list[zone.name] = []
 
     def add_connection(self, conn: Connection) -> None:
-        """
-        Add a bidirectional connection between two zones.
-        """
-        if conn.zone1_name in self.adjacency_list:
-            self.adjacency_list[conn.zone1_name].append(conn)
-            
-        if conn.zone2_name in self.adjacency_list:
-            self.adjacency_list[conn.zone2_name].append(conn)
+        """Add a connection (link) between two zones."""
+        self.connections.append(conn)
 
-    def get_neighbors(self, zone_name: str) -> list[Connection]:
+    def get_neighbors(self, zone_name: str) -> list[tuple[str, Connection]]:
         """
-        Get all connections connected to a specific zone.
-        Args:
-            zone_name (str): The name of the zone.  
+        Return all zones reachable from zone_name, along with the connection used.
+
         Returns:
-            list[Connection]: A list of connections for this zone.
+            list of (neighbor_name, connection) pairs
         """
-        return self.adjacency_list.get(zone_name, [])
+        result: list[tuple[str, Connection]] = []
+        for conn in self.connections:
+            if conn.connects(zone_name):
+                neighbor = conn.other_end(zone_name)
+                result.append((neighbor, conn))
+        return result
+
+    def find_connection(self, zone_a: str, zone_b: str) -> Connection | None:
+        """Find the connection between two zones, or None if none exists."""
+        for conn in self.connections:
+            if conn.connects(zone_a) and conn.connects(zone_b):
+                return conn
+        return None

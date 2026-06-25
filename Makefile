@@ -1,12 +1,12 @@
 PYTHON = python3
 PIP = pip
-MAIN = main.py
+MAIN = src/main.py
 
 install:
 	$(PIP) install mypy flake8
 
 run:
-	$(PYTHON) $(MAIN)
+	$(PYTHON) $(MAIN) src/MapParser.py
 
 debug:
 	$(PYTHON) -m pdb $(MAIN)
