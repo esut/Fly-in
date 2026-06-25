@@ -6,7 +6,7 @@ install:
 	$(PIP) install mypy flake8
 
 run:
-	$(PYTHON) $(MAIN) src/MapParser.py
+	$(PYTHON) $(MAIN) maps/easy/01_linear_path.txt
 
 debug:
 	$(PYTHON) -m pdb $(MAIN)
