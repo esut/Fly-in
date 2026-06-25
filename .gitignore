@@ -12,4 +12,3 @@ env/
 *.log
 .DS_Store
 maps/
-docs/
