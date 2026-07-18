@@ -1,192 +1,80 @@
-from network import Network
-from drone import Drone
+# simulation.py
+from src.models import Drone, ZoneType
+from src.graph import Graph
 
 
 class Simulation:
-    """
-    Runs the drone routing simulation turn by turn.
+    def __init__(self, graph: Graph, drones: list[Drone], end_zone: str) -> None:
+        self.graph = graph
+        self.drones = drones
+        self.end_zone = end_zone
+        self.turn = 0
+        self.log: list[str] = []
 
-    Each turn:
-      1. Drones completing a 2-turn restricted-zone transit arrive at their destination.
-      2. Drones not in transit try to move to their next zone.
-         - Zone capacity (max_drones) is respected.
-         - Link capacity (max_link_capacity) is respected.
-         - Drones that leave a zone free up its space in the same turn.
-      3. The turn's movements are printed in the required format.
+    def run(self) -> list[str]:
+        while not all(d.delivered for d in self.drones):
+            self._step()
+        return self.log
 
-    Output format per turn:  D1-zone1 D2-zone2 D3-zone1-zone2
-      where D3-zone1-zone2 means D3 is mid-transit toward zone2 via the zone1-zone2 link.
+    def _step(self) -> None:
+        self.turn += 1
+        moves_this_turn: list[str] = []
 
-    Simulation ends when all drones reach the end zone.
-    """
-
-    MAX_TURNS = 1000  # Safety limit to prevent infinite loops
-
-    def __init__(
-        self,
-        network: Network,
-        nb_drones: int,
-        start_hub: str,
-        end_hub: str,
-        path: list[str],
-    ) -> None:
-        """
-        Args:
-            network: the map with all zones and connections
-            nb_drones: how many drones to simulate
-            start_hub: name of the starting zone
-            end_hub: name of the ending zone
-            path: the planned route (list of zone names) all drones will follow
-        """
-        self.network = network
-        self.end_hub = end_hub
-
-        # Create all drones and assign the path to each
-        self.drones: list[Drone] = []
-        for i in range(1, nb_drones + 1):
-            drone = Drone(f"D{i}", start_hub)
-            drone.set_path(path)
-            self.drones.append(drone)
-
-        # How many drones are currently in each zone (not counting in-transit drones)
-        self.zone_occupancy: dict[str, int] = {z: 0 for z in network.zones}
-        self.zone_occupancy[start_hub] = nb_drones
-
-        # Store a snapshot of drone positions after each turn (for the visualizer)
-        self.history: list[dict[str, str]] = []
-        self._save_snapshot()
-
-    def run(self) -> int:
-        """
-        Run the full simulation.
-
-        Returns:
-            total number of turns taken
-        """
-        turn = 1
-        while not self._all_done():
-            moves = self._run_one_turn()
-            if moves:
-                print(" ".join(moves))
-            self._save_snapshot()
-            turn += 1
-            if turn > self.MAX_TURNS:
-                print("Warning: simulation stopped (deadlock or too many turns).")
-                break
-
-        total_turns = turn - 1
-        print(f"\nSimulation finished in {total_turns} turns.")
-        return total_turns
-
-    def _all_done(self) -> bool:
-        """Return True when every drone has reached the end zone."""
-        return all(drone.is_done(self.end_hub) for drone in self.drones)
-
-    def _save_snapshot(self) -> None:
-        """Record current drone positions for the visualizer."""
-        snapshot: dict[str, str] = {}
-        for drone in self.drones:
-            if drone.in_transit:
-                snapshot[drone.id] = drone.transit_destination
-            else:
-                snapshot[drone.id] = drone.current_zone
-        self.history.append(snapshot)
-
-    def _run_one_turn(self) -> list[str]:
-        """
-        Execute one simulation turn and return the list of move strings.
-
-        Two phases are handled simultaneously:
-          Phase A - drones completing their restricted-zone transit
-          Phase B - drones starting a new move (normal or restricted)
-        """
-        moves: list[str] = []
-
-        # --- Count how many transit drones will arrive at each zone this turn ---
-        # (so Phase B can account for that space when checking capacity)
-        transit_arrivals: dict[str, int] = {}
-        for drone in self.drones:
-            if drone.in_transit:
-                dest = drone.transit_destination
-                transit_arrivals[dest] = transit_arrivals.get(dest, 0) + 1
-
-        # --- Phase B: decide which free drones can move ---
-        # Track departures and new arrivals so we don't double-book capacity
-        departures: dict[str, int] = {z: 0 for z in self.network.zones}
-        new_arrivals: dict[str, int] = dict(transit_arrivals)
-        link_usage: dict[str, int] = {}
-
-        # List of moves to apply after all decisions are made
-        planned: list[tuple[Drone, str, bool]] = []  # (drone, destination, is_restricted)
+        # Track occupancy changes this turn to allow same-turn swaps
+        zone_leaving: dict[str, int] = {}
+        zone_arriving: dict[str, int] = {}
+        link_usage: dict[frozenset[str], int] = {}
 
         for drone in self.drones:
-            if drone.is_done(self.end_hub) or drone.in_transit:
+            if drone.delivered:
                 continue
 
-            next_zone_name = drone.get_next_zone()
-            if next_zone_name is None:
+            # Finish a 2-turn restricted move
+            if drone.in_transit_turns_left > 0:
+                drone.in_transit_turns_left -= 1
+                if drone.in_transit_turns_left == 0:
+                    dest = drone.path[drone.step_index]
+                    drone.position = dest
+                    drone.step_index += 1
+                    moves_this_turn.append(f"D{drone.drone_id}-{dest}")
+                    if dest == self.end_zone:
+                        drone.delivered = True
                 continue
 
-            next_zone = self.network.zones[next_zone_name]
-            is_end_zone = (next_zone_name == self.end_hub)
+            if drone.step_index >= len(drone.path):
+                drone.delivered = True
+                continue
 
-            # Effective occupancy of next_zone considering moves already planned this turn
-            effective_occ = (
-                self.zone_occupancy.get(next_zone_name, 0)
-                - departures.get(next_zone_name, 0)
-                + new_arrivals.get(next_zone_name, 0)
+            next_zone_name = drone.path[drone.step_index]
+            next_zone = self.graph.zones[next_zone_name]
+            conn = self.graph.get_connection(drone.position, next_zone_name)
+            link_key = frozenset((drone.position, next_zone_name))
+
+            current_occupants = sum(
+                1 for d in self.drones if d.position == next_zone_name and not d.delivered
             )
+            leaving_count = zone_leaving.get(next_zone_name, 0)
+            arriving_count = zone_arriving.get(next_zone_name, 0)
+            link_count = link_usage.get(link_key, 0)
 
-            has_zone_space = is_end_zone or (effective_occ < next_zone.max_drones)
+            zone_has_room = (current_occupants - leaving_count - arriving_count) < next_zone.capacity()
+            link_has_room = link_count < conn.max_link_capacity
 
-            # Check link capacity
-            conn = self.network.find_connection(drone.current_zone, next_zone_name)
-            link_key = f"{min(drone.current_zone, next_zone_name)}-{max(drone.current_zone, next_zone_name)}"
-            has_link_space = True
-            if conn:
-                used = link_usage.get(link_key, 0)
-                if used >= conn.max_link_capacity:
-                    has_link_space = False
+            if zone_has_room and link_has_room:
+                zone_leaving[drone.position] = zone_leaving.get(drone.position, 0) + 1
+                zone_arriving[next_zone_name] = arriving_count + 1
+                link_usage[link_key] = link_count + 1
 
-            if not (has_zone_space and has_link_space):
-                continue  # Drone waits this turn
+                if next_zone.zone_type == ZoneType.RESTRICTED:
+                    drone.in_transit_turns_left = 1  # arrives next turn
+                    moves_this_turn.append(f"D{drone.drone_id}-{drone.position}{next_zone_name}")
+                else:
+                    drone.position = next_zone_name
+                    drone.step_index += 1
+                    moves_this_turn.append(f"D{drone.drone_id}-{next_zone_name}")
+                    if next_zone_name == self.end_zone:
+                        drone.delivered = True
+            # else: drone waits, contributes nothing to this line
 
-            # This drone will move — reserve the space now
-            departures[drone.current_zone] = departures.get(drone.current_zone, 0) + 1
-            if conn:
-                link_usage[link_key] = link_usage.get(link_key, 0) + 1
-
-            is_restricted = (next_zone.zone_type == "restricted")
-            if not is_restricted:
-                # Drone arrives at destination this same turn
-                new_arrivals[next_zone_name] = new_arrivals.get(next_zone_name, 0) + 1
-
-            planned.append((drone, next_zone_name, is_restricted))
-
-        # --- Apply Phase A: transit drones arrive ---
-        for drone in self.drones:
-            if drone.in_transit:
-                dest = drone.transit_destination
-                drone.complete_transit()
-                moves.append(f"{drone.id}-{dest}")
-
-        # --- Apply Phase B: planned moves execute ---
-        for drone, destination, is_restricted in planned:
-            from_zone = drone.current_zone
-            if is_restricted:
-                drone.start_transit_to(destination)
-                # Output: D1-fromZone-toZone (the connection being traversed)
-                moves.append(f"{drone.id}-{from_zone}-{destination}")
-            else:
-                drone.move_to(destination)
-                moves.append(f"{drone.id}-{destination}")
-
-        # --- Rebuild zone occupancy from scratch ---
-        self.zone_occupancy = {z: 0 for z in self.network.zones}
-        for drone in self.drones:
-            if not drone.in_transit:
-                z = drone.current_zone
-                if z in self.zone_occupancy:
-                    self.zone_occupancy[z] += 1
-
-        return moves
+        if moves_this_turn:
+            self.log.append(" ".join(moves_this_turn))

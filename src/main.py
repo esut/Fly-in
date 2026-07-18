@@ -1,62 +1,35 @@
-import sys
-from MapParser import MapParser
-from pathfinder import Pathfinder
-from simulation import Simulation
-from visualizer import Visualizer
-
+from src.parser import parse_map
+from src.simulation import Simulation
+from src.models import Drone
+from src.visualizer import print_turn
+from parser import Parse ,ParseError
 
 def main() -> None:
-    """
-    Entry point for the Fly-in drone routing simulation.
+    """Entry point — usage: python main.py <map_file>"""
+    if len(sys.argv) < 2:
+        print("Usage: python main.py <map_file>")
+        return
 
-    Usage:
-        python main.py <map_file>
+    map_file: str = sys.argv[1]
 
-    Example:
-        python main.py ../maps/easy/01_linear_path.txt
-    """
-    if len(sys.argv) != 2:
-        print("Usage: python main.py <map_file>", file=sys.stderr)
-        sys.exit(1)
 
-    map_file = sys.argv[1]
-
-    # Step 1: Parse the map file
-    parser = MapParser(map_file)
-    parser.parse()
-
-    print(f"Map loaded: {parser.nb_drones} drones, "
-          f"start='{parser.start_hub}', end='{parser.end_hub}'")
-    print(f"Zones: {len(parser.network.zones)}, "
-          f"Connections: {len(parser.network.connections)}\n")
-
-    # Step 2: Find the best path from start to end
-    finder = Pathfinder(parser.network)
-    path = finder.find_path(parser.start_hub, parser.end_hub)
-
-    if path is None:
-        print("Error: no valid path found from start to end.", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Path found ({len(path) - 1} steps): {' -> '.join(path)}\n")
-
-    # Step 3: Run the simulation
-    sim = Simulation(
-        network=parser.network,
-        nb_drones=parser.nb_drones,
-        start_hub=parser.start_hub,
-        end_hub=parser.end_hub,
-        path=path,
-    )
-    sim.run()
-
-    # Step 4: Show the animated visualizer
     try:
-        vis = Visualizer(parser.network, sim.history)
-        vis.animate()
-    except Exception as e:
-        print(f"Visualizer could not run: {e}")
+        parser = Parse(map_file)
+        nb_drones, zones, start, end, connections = parser.parse()
+    except ParseError as e:
+        print(f"Error: {e}")
+        return
+    path = graph.shortest_path(start, end)  # same path for all drones (simple version)
+
+    drones = [Drone(drone_id=i + 1, position=start, path=path[1:]) for i in range(nb_drones)]
+    sim = Simulation(graph, drones, end)
+    log = sim.run()
+
+    for i, line in enumerate(log, start=1):
+        print_turn(i, line)
+    print(f"\nCompleted in {len(log)} turns.")
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    main(sys.argv[1] if len(sys.argv) > 1 else "maps/easy_1.txt")
