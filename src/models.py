@@ -1,51 +1,41 @@
-from dataclasses import dataclass, field
-from enum import Enum
+from typing import Optional
 
 
-class ZoneType(Enum):
-    NORMAL = "normal"
-    BLOCKED = "blocked"
-    RESTRICTED = "restricted"
-    PRIORITY = "priority"
-
-    @property
-    def cost(self) -> int:
-        return {"normal": 1, "priority": 1, "restricted": 2, "blocked": -1}[self.value]
-
-
-@dataclass
-class Zone:
-    name: str
-    x: int
-    y: int
-    zone_type: ZoneType = ZoneType.NORMAL
-    color: str = "none"
-    max_drones: int = 1
-    is_start: bool = False
-    is_end: bool = False
-
-    def capacity(self) -> int:
-        # start/end zones have unlimited capacity
-        if self.is_start or self.is_end:
-            return 10 ** 9
-        return self.max_drones
-
-
-@dataclass
 class Connection:
-    zone_a: str
-    zone_b: str
-    max_link_capacity: int = 1
 
-    def other(self, zone_name: str) -> str:
-        return self.zone_b if zone_name == self.zone_a else self.zone_a
+    def __init__(
+        self, zone_a: str, zone_b: str, max_link_capacity: int = 1
+    ) -> None:
+        self.zone_a: str = zone_a
+        self.zone_b: str = zone_b
+        self.max_link_capacity: int = max_link_capacity
 
 
-@dataclass
+class Zone:
+
+    def __init__(
+        self,
+        name: str,
+        x: int,
+        y: int,
+        zone_type: str = "normal",
+        color: Optional[str] = None,
+        max_drones: int = 1,
+    ) -> None:
+        self.name: str = name
+        self.x: int = x
+        self.y: int = y
+        self.zone_type: str = zone_type
+        self.color: Optional[str] = color
+        self.max_drones: int = max_drones
+
+        if zone_type == "restricted":
+            self.entry_cost: int = 2
+        else:
+            self.entry_cost = 1
+
+
 class Drone:
-    drone_id: int
-    position: str
-    path: list[str] = field(default_factory=list)   # precomputed route
-    step_index: int = 0
-    delivered: bool = False
-    in_transit_turns_left: int = 0                    # for restricted zones
+
+    def __init__(self, name: str) -> None:
+        self.name: str = name
