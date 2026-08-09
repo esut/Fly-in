@@ -1,0 +1,6 @@
+__pycache__/
+.mypy_cache/
+
+.venv/
+.DS_Store
+# maps/ "to add maps/ folder to github repo"

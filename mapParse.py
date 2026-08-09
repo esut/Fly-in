@@ -1,12 +1,8 @@
-from models import Zone, Connection
+from models import Zone, Connection, ParseError
+import sys
 
 
-class ParseError(Exception):
-    """Raised when the map file is missing or has invalid syntax."""
-    pass
-
-
-class Parse:
+class MapParse:
     def __init__(self, path: str) -> None:
         self.path: str = path
 
@@ -16,16 +12,19 @@ class Parse:
         try:
             with open(self.path, "r") as f:
                 for row in f:
-                    line = row.strip()
-                    if not line or line.startswith("#"):
+                    line = row.split("#")[0].strip()
+                    if not line:
                         continue
                     lines.append(line)
-        except FileNotFoundError:
-            raise ParseError(f"Map file not found: {self.path}")
+        except FileNotFoundError as f:
+            print(f"Error:{f}")
+        except Exception as e:
+            print(f"Error:{e}")
+
         return lines
 
     def parse_metadata(self, meta: str) -> dict[str, str]:
-        """Parse metadata string into a dict."""
+        """Parse metadata string "[color=red max_drones=3]" into a dict."""
         meta_dict: dict[str, str] = {}
         if not meta:
             return meta_dict
@@ -38,39 +37,47 @@ class Parse:
         return meta_dict
 
     def parse_nb_drones(self, line: str) -> int:
-        """'nb_drones: 5' -> 5"""
+        """'nb_drones: 5' -> ["nb_drones", " 5"]"""
         try:
             return int(line.split(":")[1].strip())
-        except (IndexError, ValueError):
-            raise ParseError(f"Invalid nb_drones line: {line!r}")
+        except (IndexError, ValueError, Exception):
+            print(f"Invalid nb_drones line: {line!r}")
+            sys.exit(1)
 
     def parse_zone(self, line: str) -> Zone:
         """'hub: corridorA 4 3 [color=red]' -> Zone('corridorA', 4, 3)"""
         try:
-            body = line.split(":", 1)[1]
-            before_meta = body.split("[")[0]
+            body = line.split(":", 1)[1] # corridorA 4 3 [color=red]
+            before_meta = body.split("[")[0] # corridorA 4 3
+            name, x, y = before_meta.split() # name="corridorA", x=4, y=3
             meta_str = "[" + body.split("[")[1] if "[" in body else ""
-            name, x, y = before_meta.split()
             meta = self.parse_metadata(meta_str)
             zone_type = meta.get("zone", "normal")
             color = meta.get("color", None)
             max_drones = int(meta.get("max_drones", 1))
+            if max_drones <= 0:
+                raise ParseError("invalid max_drones values")
+            if zone_type not in ["restricted", "normal", "priority", "blocked"]:
+                raise ParseError("Invalid  zone type !!!!!")
             return Zone(name, int(x), int(y), zone_type, color, max_drones)
-        except (IndexError, ValueError):
-            raise ParseError(f"Invalid zone line: {line!r}")
+        except (IndexError, ValueError, Exception, ParseError):
+            print(f"Invalid zone line: {line!r}")
 
     def parse_connection(self, line: str) -> Connection:
         """Parse a connection line into a Connection object."""
         try:
             body = line.split(":", 1)[1]
             before_meta = body.split("[")[0]
-            meta_str = "[" + body.split("[")[1] if "[" in body else ""
             a, b = before_meta.strip().split("-")
+            meta_str = "[" + body.split("[")[1] if "[" in body else ""
             meta = self.parse_metadata(meta_str)
             capacity = int(meta.get("max_link_capacity", 1))
+            if capacity <= 0:
+                print("invalid capacity values")
+                sys.exit(1)
             return Connection(a.strip(), b.strip(), capacity)
-        except (IndexError, ValueError):
-            raise ParseError(f"Invalid connection line: {line!r}")
+        except (IndexError, ValueError, Exception):
+            print(f"Invalid connection line: {line!r}")
 
     def parse(self) -> tuple[int, dict[str, Zone], str, str, list[Connection]]:
         """Read all lines and return parsed data."""

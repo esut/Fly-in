@@ -1,27 +1,31 @@
+
 PYTHON = python3
-PIP = pip
-MAIN = src/main.py
+UV = uv
+SRC = main.py
+MAP_FILE = maps/easy/01_linear_path.txt
+
 
 install:
-	$(PIP) install mypy flake8
+	$(UV) sync
 
 run:
-	python -m src.main maps/easy/01_linear_path.txt
+	$(UV) run $(PYTHON)  $(SRC) $(MAP_FILE)
 
 debug:
-	$(PYTHON) -m pdb $(MAIN)
+	$(UV) $(PYTHON)  pdb $(MAIN_SCRIPT) $(MAP_FILE)
 
 clean:
-	rm -rf __pycache__
-	rm -rf .mypy_cache
-	find . -type d -name "__pycache__" -exec rm -r {} +
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	find . -type d -name ".mypy_cache" -exec rm -rf {} +
 
 lint:
-	flake8 .
-	mypy . --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
+	flake8 src
+	mypy src --warn-return-any --warn-unused-ignores \
+		--ignore-missing-imports --disallow-untyped-defs \
+		--check-untyped-defs
 
 lint-strict:
-	flake8 .
-	mypy . --strict
+	flake8 src
+	mypy src --strict
 
 .PHONY: install run debug clean lint lint-strict
